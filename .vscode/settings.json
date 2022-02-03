@@ -1,0 +1,4 @@
+{
+    "C_Cpp.default.configurationProvider": "nrf-connect",
+    "java.configuration.updateBuildConfiguration": "interactive"
+}

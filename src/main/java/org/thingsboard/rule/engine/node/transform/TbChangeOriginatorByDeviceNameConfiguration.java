@@ -13,20 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.thingsboard.rule.engine.node.filter;
+package org.thingsboard.rule.engine.node.transform;
 
 import lombok.Data;
 import org.thingsboard.rule.engine.api.NodeConfiguration;
 
-@Data
-public class TbKeyFilterNodeConfiguration implements NodeConfiguration<TbKeyFilterNodeConfiguration> {
 
-    private String key;
+@Data
+public class TbChangeOriginatorByDeviceNameConfiguration implements NodeConfiguration<TbChangeOriginatorByDeviceNameConfiguration> {
+
+    private String inputKey;
+    private String prefix;
 
     @Override
-    public TbKeyFilterNodeConfiguration defaultConfiguration() {
-        TbKeyFilterNodeConfiguration configuration = new TbKeyFilterNodeConfiguration();
-        configuration.setKey(null);
+    public TbChangeOriginatorByDeviceNameConfiguration defaultConfiguration() {
+        TbChangeOriginatorByDeviceNameConfiguration configuration = new TbChangeOriginatorByDeviceNameConfiguration();
+        configuration.setInputKey("deviceName");
+        configuration.setPrefix("");
         return configuration;
     }
+
 }
+

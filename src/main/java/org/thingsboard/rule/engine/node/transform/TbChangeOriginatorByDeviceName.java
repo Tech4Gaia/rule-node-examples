@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.thingsboard.rule.engine.node.enrichment;
+package org.thingsboard.rule.engine.node.transform;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.rule.engine.api.TbNode;
@@ -25,58 +26,73 @@ import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.util.TbNodeUtils;
 import org.thingsboard.server.common.data.plugin.ComponentType;
 import org.thingsboard.server.common.msg.TbMsg;
+import org.thingsboard.server.common.data.id.EntityId;
+import org.thingsboard.server.common.msg.TbMsgMetaData;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.concurrent.ExecutionException;
 
 import static org.thingsboard.rule.engine.api.TbRelationTypes.SUCCESS;
 
-/**
- * Created by mshvayka on 10.08.18.
- */
+@Slf4j
 @RuleNode(
-        type = ComponentType.ENRICHMENT,
-        name = "get sum into metadata",
-        configClazz = TbGetSumIntoMetadataConfiguration.class,
-        nodeDescription = "Calculate Sum of the telemetry data, which fields begin with the specified prefix and add the result into Message Metadata ",
-        nodeDetails = "If fields in Message payload start with the <code>Input Key</code>, Sum of this fields added into metadata.",
+        type = ComponentType.TRANSFORMATION,
+        name = "Change originator by Device name",
+        configClazz = TbChangeOriginatorByDeviceNameConfiguration.class,
+        nodeDescription = "Change orginator by Device name of the telemetry data. ",
+        nodeDetails = "",
         uiResources = {"static/rulenode/custom-nodes-config.js"},
         configDirective = "tbEnrichmentNodeSumIntoMetadataConfig")
-public class TbGetSumIntoMetadata implements TbNode {
+public class TbChangeOriginatorByDeviceName implements TbNode {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private TbGetSumIntoMetadataConfiguration config;
+    private TbChangeOriginatorByDeviceNameConfiguration config;
     private String inputKey;
-    private String outputKey;
+    private String prefix;
 
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
-        this.config = TbNodeUtils.convert(configuration, TbGetSumIntoMetadataConfiguration.class);
+        this.config = TbNodeUtils.convert(configuration, TbChangeOriginatorByDeviceNameConfiguration.class);
         inputKey = config.getInputKey();
-        outputKey = config.getOutputKey();
+        prefix = config.getPrefix();
     }
 
-
     @Override
-    public void onMsg(TbContext ctx, TbMsg msg) {
-        double sum = 0;
+    public void onMsg(TbContext ctx, TbMsg msg) throws ExecutionException, InterruptedException, TbNodeException {
         boolean hasRecords = false;
+        EntityId id = null;
         try {
             JsonNode jsonNode = mapper.readTree(msg.getData());
             Iterator<String> iterator = jsonNode.fieldNames();
             while (iterator.hasNext()) {
                 String field = iterator.next();
                 if (field.startsWith(inputKey)) {
-                    sum += jsonNode.get(field).asDouble();
                     hasRecords = true;
+                    String name = prefix + jsonNode.get(field);
+                    id = (EntityId)ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", "")).getId();
+                    System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                    break;
                 }
             }
             if (hasRecords) {
-                msg.getMetaData().putValue(outputKey, Double.toString(sum));
-                ctx.tellNext(msg, SUCCESS);
+                TbMsg newMsg = TbMsg.transformMsg(msg, msg.getType(), id, msg.getMetaData(), msg.getData());
+                ctx.tellNext(newMsg, SUCCESS);
             } else {
-                ctx.tellFailure(msg, new Exception("Message doesn't contains the Input Key: " + inputKey));
+                TbMsgMetaData metadata = msg.getMetaData();
+                String name = prefix + metadata.getValue(inputKey);
+                if (name != null) {
+                    hasRecords = true;
+                    id = (EntityId)ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", "")).getId();
+                    System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                }
+            }
+            if (hasRecords) {
+                TbMsg newMsg = TbMsg.transformMsg(msg, msg.getType(), id, msg.getMetaData(), msg.getData());
+                ctx.tellNext(newMsg, "SUCCESS");
+            } else {
+                ctx.tellFailure(msg, new Exception("Message doesn't contain the key: " + inputKey));
             }
         } catch (IOException e) {
             ctx.tellFailure(msg, e);
@@ -85,6 +101,5 @@ public class TbGetSumIntoMetadata implements TbNode {
 
     @Override
     public void destroy() {
-
     }
 }
