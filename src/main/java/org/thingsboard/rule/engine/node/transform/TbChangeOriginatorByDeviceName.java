@@ -24,6 +24,7 @@ import org.thingsboard.rule.engine.api.TbNode;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.util.TbNodeUtils;
+import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.plugin.ComponentType;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.data.id.EntityId;
@@ -31,9 +32,11 @@ import org.thingsboard.server.common.msg.TbMsgMetaData;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import static org.thingsboard.rule.engine.api.TbRelationTypes.SUCCESS;
+import static org.thingsboard.rule.engine.api.TbRelationTypes.FAILURE;
 
 @Slf4j
 @RuleNode(
@@ -63,16 +66,20 @@ public class TbChangeOriginatorByDeviceName implements TbNode {
     public void onMsg(TbContext ctx, TbMsg msg) throws ExecutionException, InterruptedException, TbNodeException {
         boolean hasRecords = false;
         EntityId id = null;
+        Device device = null;
         try {
             JsonNode jsonNode = mapper.readTree(msg.getData());
             Iterator<String> iterator = jsonNode.fieldNames();
             while (iterator.hasNext()) {
                 String field = iterator.next();
                 if (field.startsWith(inputKey)) {
-                    hasRecords = true;
                     String name = prefix + jsonNode.get(field);
-                    id = (EntityId)ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", "")).getId();
-                    System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                    device = ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", ""));
+                    if (device != null) {
+                        hasRecords = true;
+                        id = device.getId();
+                        System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                    }
                     break;
                 }
             }
@@ -83,16 +90,20 @@ public class TbChangeOriginatorByDeviceName implements TbNode {
                 TbMsgMetaData metadata = msg.getMetaData();
                 String name = prefix + metadata.getValue(inputKey);
                 if (name != null) {
-                    hasRecords = true;
-                    id = (EntityId)ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", "")).getId();
-                    System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                    device = ctx.getDeviceService().findDeviceByTenantIdAndName(ctx.getTenantId(), name.replace("\"", ""));
+                    if (device != null) {
+                        id = device.getId();
+                        hasRecords = true;
+                        System.out.println("####" + name.replace("\"", "") + " | " + id + "####");
+                    }
                 }
             }
             if (hasRecords) {
                 TbMsg newMsg = TbMsg.transformMsg(msg, msg.getType(), id, msg.getMetaData(), msg.getData());
-                ctx.tellNext(newMsg, "SUCCESS");
+                ctx.tellNext(newMsg, SUCCESS);
             } else {
-                ctx.tellFailure(msg, new Exception("Message doesn't contain the key: " + inputKey));
+                //ctx.tellFailure(msg, new Exception("Message doesn't contain the key: " + inputKey));
+                ctx.tellNext(msg, FAILURE);
             }
         } catch (IOException e) {
             ctx.tellFailure(msg, e);
